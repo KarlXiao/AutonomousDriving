@@ -54,7 +54,8 @@ def _parse_function(proto):
 
 
 def main(unparsed):
-    r"""check tfrecord data
+    r"""
+    check tfrecord data
     :param unparsed:
     :return:
     """

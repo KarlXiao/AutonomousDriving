@@ -36,7 +36,8 @@ def _bytes_feature(value):
 
 
 def main(unused_argv):
-    r"""Converts a dataset to tfrecords
+    r"""
+    Converts a dataset to tfrecords
     """
     if 'val' in FLAGS.json_file:
         data_type = 'val'

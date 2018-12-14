@@ -10,8 +10,8 @@ tf.enable_eager_execution()
 
 parser = argparse.ArgumentParser()
 parser.add_argument('--save_dir', type=str, default='checkpoint', help='directory to save checkpoint')
-parser.add_argument('--log', type=str, default='log/', help='direcotry to save training log')
-parser.add_argument('--resume_dir', type=str, default=None, help='model direcotry for finetune training')
+parser.add_argument('--log', type=str, default='log/', help='directory to save training log')
+parser.add_argument('--resume_dir', type=str, default=None, help='model directory for finetune training')
 parser.add_argument('--capacity', type=int, default=1000, help='maximum number of elements in the queue')
 parser.add_argument('--train_data', type=str, default='data/val.tfrecords', help='tfrecords to load')
 parser.add_argument('--batch_size', type=int, default=256, help='training batch size')
@@ -34,7 +34,7 @@ def train(unparsed):
 
     train_dataset = create_loader(FLAGS.train_data, FLAGS.batch_size, FLAGS.capacity)
 
-    model = PerceptionNet()
+    model = PerceptionNet([1, 1, 1, 1])
 
     step_counter = tf.Variable(0, trainable=False)
     lr = tf.train.exponential_decay(FLAGS.lr, step_counter, FLAGS.decay_step, FLAGS.decay_rate)

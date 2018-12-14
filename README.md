@@ -1,7 +1,7 @@
 # AutonomousDriving
 
 
-Autonomouse driving perception including segmentation and detection.
+Autonomous driving perception including segmentation and detection.
 
 ```
 .
@@ -17,3 +17,5 @@ Autonomouse driving perception including segmentation and detection.
 ├── LICENSE
 └── README.md
 ```
+
+Dataset used in this project is [BDD100K](http://bdd-data.berkeley.edu/index.html), check [license](http://bdd-data.berkeley.edu/portal.html#download)
