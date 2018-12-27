@@ -107,6 +107,7 @@ venv.bak/
 .vscode/
 
 data/
+checkpoint/
 
 *.tfrecords
 *.jpg

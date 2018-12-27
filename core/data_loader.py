@@ -23,7 +23,7 @@ def _parse_function(proto):
     seg = tf.decode_raw(parsed_features['seg'], tf.uint8)
     seg = tf.reshape(seg, [shape[0], shape[1]])
     boxes = tf.decode_raw(parsed_features['bbox'], tf.float64)
-    boxes = tf.reshape(boxes, [number, 4])
+    boxes = tf.to_float(tf.reshape(boxes, [number, 4]))
     labels = tf.decode_raw(parsed_features['label'], tf.int64)
 
     return img, seg, boxes, labels
