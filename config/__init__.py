@@ -1,1 +1,1 @@
-
+from .cfg import DetectionCfg

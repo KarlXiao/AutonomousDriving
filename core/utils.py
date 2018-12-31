@@ -1,6 +1,4 @@
-import tensorflow as tf
-import numpy as np
-import cv2
+import torch
 
 
 def point_form(boxes, point_type='xywh'):
@@ -14,9 +12,9 @@ def point_form(boxes, point_type='xywh'):
     """
 
     if point_type == 'xywh':
-        output = tf.concat([boxes[:, :2], boxes[:, :2] + boxes[:, 2:]], 1)
+        output = torch.cat([boxes[:, :2], boxes[:, :2] + boxes[:, 2:]], 1)
     elif point_type == 'ccwh':
-        output = tf.concat([boxes[:, :2] - boxes[:, 2:]/2, boxes[:, :2] + boxes[:, 2:]/2], 1)
+        output = torch.cat([boxes[:, :2] - boxes[:, 2:]/2, boxes[:, :2] + boxes[:, 2:]/2], 1)
     else:
         raise TypeError('point_type must be xywh or ccwh')
 
@@ -24,21 +22,13 @@ def point_form(boxes, point_type='xywh'):
 
 
 def intersect(box_a, box_b):
-    num_a = box_a.get_shape().as_list()[0]
-    num_b = box_b.get_shape().as_list()[0]
-    try:
-        max_xy = np.minimum(tf.tile(tf.expand_dims(box_a[:, 2:], 1), [1, num_b, 1]),
-                            tf.tile(tf.expand_dims(box_b[:, 2:], 0), [num_a, 1, 1]))
-
-    except RuntimeError:
-        print(box_a)
-        print(box_b)
-        print(num_a)
-        print(num_b)
-    min_xy = np.maximum(tf.tile(tf.expand_dims(box_a[:, :2], 1), [1, num_b, 1]),
-                        tf.tile(tf.expand_dims(box_b[:, :2], 0), [num_a, 1, 1]))
-    inter = np.clip((max_xy - min_xy), a_min=0, a_max=np.inf)
-
+    A = box_a.size(0)
+    B = box_b.size(0)
+    max_xy = torch.min(box_a[:, 2:].unsqueeze(1).expand(A, B, 2),
+                       box_b[:, 2:].unsqueeze(0).expand(A, B, 2))
+    min_xy = torch.max(box_a[:, :2].unsqueeze(1).expand(A, B, 2),
+                       box_b[:, :2].unsqueeze(0).expand(A, B, 2))
+    inter = torch.clamp((max_xy - min_xy), min=0)
     return inter[:, :, 0] * inter[:, :, 1]
 
 
@@ -51,16 +41,13 @@ def jaccard(box_a, box_b):
     :param box_b: Single bounding box, Shape: [4]
     :return: jaccard overlap: Shape: [box_a.shape[0], box_a.shape[1]]
     """
-    num_a = box_a.get_shape().as_list()[0]
-    num_b = box_b.get_shape().as_list()[0]
     inter = intersect(box_a, box_b)
-    area_a = tf.tile(tf.expand_dims((box_a[:, 2]-box_a[:, 0]) *
-                                    (box_a[:, 3]-box_a[:, 1]), 1), [1, num_b])
-    area_b = tf.tile(tf.expand_dims((box_b[:, 2]-box_b[:, 0]) *
-                                    (box_b[:, 3]-box_b[:, 1]), 0), [num_a, 1])
+    area_a = ((box_a[:, 2]-box_a[:, 0]) *
+              (box_a[:, 3]-box_a[:, 1])).unsqueeze(1).expand_as(inter)  # [A,B]
+    area_b = ((box_b[:, 2]-box_b[:, 0]) *
+              (box_b[:, 3]-box_b[:, 1])).unsqueeze(0).expand_as(inter)  # [A,B]
     union = area_a + area_b - inter
-
-    return inter / union
+    return inter / union  # [A,B]
 
 
 def encode(matched, priors, variances):
@@ -78,9 +65,9 @@ def encode(matched, priors, variances):
     g_cxcy /= (variances[0] * priors[:, 2:])
     # match wh / prior wh
     g_wh = matched[:, 2:] / priors[:, 2:]
-    g_wh = tf.math.log(g_wh) / variances[1]
+    g_wh = torch.log(g_wh) / variances[1]
 
-    return tf.concat([g_cxcy, g_wh], 1)  # [num_priors,4]
+    return torch.cat([g_cxcy, g_wh], 1)  # [num_priors,4]
 
 
 def decode(loc, priors, variances):
@@ -92,14 +79,15 @@ def decode(loc, priors, variances):
     :param variances: variance between anchors and bounding box
     :return: decoded bounding box predictions
     """
-    boxes = tf.concat((
+    boxes = torch.cat((
         priors[:, :2] + loc[:, :2] * variances[0] * priors[:, 2:],
-        priors[:, 2:] * tf.math.exp(loc[:, 2:] * variances[1])), 1)
+        priors[:, 2:] * torch.exp(loc[:, 2:] * variances[1])), 1)
+    boxes[:, :2] -= boxes[:, 2:] / 2
+    boxes[:, 2:] += boxes[:, :2]
+    return boxes
 
-    return tf.concat([boxes[:, :2] - boxes[:, 2:] / 2, boxes[:, 2:]], 1)
 
-
-def match(threshold, truths, priors, variances, labels, loc_t, conf_t, idx, im=None):
+def match(threshold, truths, priors, variances, labels, loc_t, conf_t, idx):
     r"""
     Match each prior box with the ground truth box of the highest jaccard
     overlap, encode the bounding boxes, then return the matched indices
@@ -119,59 +107,101 @@ def match(threshold, truths, priors, variances, labels, loc_t, conf_t, idx, im=N
         point_form(priors, 'ccwh')
     )
 
-    matches = truths.numpy()[tf.argmax(overlaps).numpy()]   # Shape: [num_priors,4]
-    conf = labels.numpy()[tf.argmax(overlaps).numpy()]      # Shape: [num_priors]
-    conf[tf.reduce_max(overlaps, axis=0) < threshold] = 0  # label as background
+    best_prior_overlap, best_prior_idx = overlaps.max(1, keepdim=True)
+    # [1,num_priors] best ground truth for each prior
+    best_truth_overlap, best_truth_idx = overlaps.max(0, keepdim=True)
+    best_truth_idx.squeeze_(0)
+    best_truth_overlap.squeeze_(0)
+    best_prior_idx.squeeze_(1)
+    best_prior_overlap.squeeze_(1)
+    best_truth_overlap.index_fill_(0, best_prior_idx, 2)  # ensure best prior
+    # ensure every gt matches with its prior of max overlap
+    for j in range(best_prior_idx.size(0)):
+        best_truth_idx[best_prior_idx[j]] = j
+    matches = truths[best_truth_idx]          # Shape: [num_priors,4]
 
-    # if im != None:
-    #     prior_idx = tf.where(tf.reduce_max(overlaps, axis=0) > 0.5).numpy()
-    #     img = np.uint8(im.numpy() * 255)
-    #     h, w, _ = img.shape
-    #     predict = point_form(priors, 'ccwh')
-    #     for prior in prior_idx:
-    #         box = predict[prior[0], :]
-    #         b = [int(box[0] * w), int(box[1] * h), int(box[2] * w), int(box[3] * h)]
-    #         cv2.rectangle(img, (b[0], b[1]), (b[2], b[3]), (0, 0, 255), 1)
-    #
-    #         for box in truths:
-    #             b = [int(box[0] * w), int(box[1] * h), int((box[2]+box[0]) * w), int((box[3]+box[1]) * h)]
-    #             cv2.rectangle(img, (b[0], b[1]), (b[2], b[3]), (0, 255, 0), 2)
-    #     cv2.imshow('cv', img)
-    #     cv2.waitKey(0)
+    conf = labels[best_truth_idx]             # Shape: [num_priors]
 
+    conf[best_truth_overlap < threshold] = 0  # label as background
     loc = encode(matches, priors, variances)
-    loc_t[idx] = loc  # [num_priors,4] encoded offsets to learn
+    loc_t[idx] = loc    # [num_priors,4] encoded offsets to learn
     conf_t[idx] = conf  # [num_priors] top class label for each prior
 
 
-def nms(boxes, scores, overlap=0.5):
+def nms(boxes, scores, overlap=0.5, top_k=50):
     r"""
     Apply non-maximum suppression at test time to avoid detecting too many
     overlapping bounding boxes for a given object
     :param boxes: The location preds for the img, Shape: [num_priors,4]
     :param scores: The class predscores for the img, Shape:[num_priors]
     :param overlap: The overlap thresh for suppressing unnecessary boxes
+    :param top_k: The number of top scores
     :return: The indices of the kept boxes with respect to num_priors
     """
 
-    if scores.shape == 0:
-        return None, 0
+    keep = scores.new(scores.size(0)).zero_().long()
+    count = 0
+    if boxes.numel() == 0:
+        return keep, count
+    x1 = boxes[:, 0]
+    y1 = boxes[:, 1]
+    x2 = boxes[:, 2]
+    y2 = boxes[:, 3]
 
-    num = scores.shape.as_list()[0]
-    scores_copy, idx = tf.nn.top_k(scores, num)
-    boxes_copy = tf.gather(boxes, idx)
-    keep = np.ones(num)
+    area = torch.mul(x2 - x1, y2 - y1)
+    v, idx = scores.sort(0)  # sort in ascending order
+    # I = I[v >= 0.01]
+    idx = idx[-top_k:]  # indices of the top-k largest vals
+    xx1 = boxes.new()
+    yy1 = boxes.new()
+    xx2 = boxes.new()
+    yy2 = boxes.new()
+    w = boxes.new()
+    h = boxes.new()
 
-    for i in range(num):
-        if keep[i] == 0:
-            continue
+    # keep = torch.Tensor()
+    while idx.numel() > 0:
+        i = idx[-1]  # index of current largest val
+        # keep.append(i)
+        keep[count] = i
+        count += 1
+        if idx.size(0) == 1:
+            break
+        idx = idx[:-1]  # remove kept element from view
+        # load bboxes of next highest vals
+        torch.index_select(x1, 0, idx, out=xx1)
+        torch.index_select(y1, 0, idx, out=yy1)
+        torch.index_select(x2, 0, idx, out=xx2)
+        torch.index_select(y2, 0, idx, out=yy2)
+        # store element-wise max with next highest score
+        xx1 = torch.clamp(xx1, min=x1[i])
+        yy1 = torch.clamp(yy1, min=y1[i])
+        xx2 = torch.clamp(xx2, max=x2[i])
+        yy2 = torch.clamp(yy2, max=y2[i])
+        w.resize_as_(xx2)
+        h.resize_as_(yy2)
+        w = xx2 - xx1
+        h = yy2 - yy1
+        # check sizes of xx1 and xx2.. after each iteration
+        w = torch.clamp(w, min=0.0)
+        h = torch.clamp(h, min=0.0)
+        inter = w * h
+        # IoU = i / (area(a) + area(b) - i)
+        rem_areas = torch.index_select(area, 0, idx)  # load remaining areas)
+        union = (rem_areas - inter) + area[i]
+        IoU = inter / union  # store result in iou
+        # keep only elements with an IoU <= overlap
+        idx = idx[IoU.le(overlap)]
+    return keep, count
 
-        for j in range(i + 1, num):
-            box_a = tf.expand_dims(boxes_copy[i], 0)
-            box_b = tf.expand_dims(boxes_copy[j], 0)
-            iou = jaccard(box_a, box_b)
 
-            if iou.numpy() >= overlap:
-                keep[j] = 0
+def one_hot_embedding(labels, num_classes):
+    r"""
+    Embedding labels to one-hot form.
+    :param labels: (LongTensor) class labels, sized [N,].
+    :param num_classes: (int) number of classes.
+    :return: (tensor) encoded labels, sized [N,#classes].
+    """
+    y = torch.eye(num_classes)  # [D,D]
 
-    return tf.boolean_mask(boxes_copy, keep == 1), tf.boolean_mask(scores_copy, keep == 1)
+    return y[labels]            # [N,D]

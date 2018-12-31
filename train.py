@@ -1,78 +1,124 @@
 import os
 import sys
+import torch
+import torch.nn.init as init
+from torch.autograd import Variable
+import torch.utils.data as data
 import numpy as np
 import argparse
-import tensorflow as tf
-from core import PerceptionNet
-from core import create_loader
+from core import PerceptionNet, BDDLoader, detection_loss, detection_collate
+from config import DetectionCfg as cfg
 
-tf.enable_eager_execution()
 
 parser = argparse.ArgumentParser()
 parser.add_argument('--save_dir', type=str, default='checkpoint', help='directory to save checkpoint')
 parser.add_argument('--log', type=str, default='log/', help='directory to save training log')
-parser.add_argument('--resume_dir', type=str, default=None, help='model directory for finetune training')
-parser.add_argument('--capacity', type=int, default=1000, help='maximum number of elements in the queue')
-parser.add_argument('--train_data', type=str, default='data/val.tfrecords', help='tfrecords to load')
-parser.add_argument('--batch_size', type=int, default=256, help='training batch size')
+parser.add_argument('--resume', type=str, default=None, help='model directory for finetune training')
+parser.add_argument('--json', type=str, default='data/BDD100K/labels/bdd100k_labels_images_train.json', help='tfrecords to load')
+parser.add_argument('--im_dir', type=str, default='data/BDD100K/images', help='images directory')
+
+parser.add_argument('--batch_size', type=int, default=32, help='training batch size')
 parser.add_argument('--epoch', type=int, default=1600, help='number of training epoch')
-parser.add_argument('--lr', type=float, default=0.01, help='learning rate')
-parser.add_argument('--decay_step', default=10000, type=float, help='learning rate decay step')
-parser.add_argument('--decay_rate', default=0.5, type=float, help='learning rate decay rate')
+parser.add_argument('--lr', type=float, default=1e-2, help='learning rate')
+parser.add_argument('--weight_decay', default=5e-4, type=float, help='learning rate decay step')
+parser.add_argument('--momentum', default=0.9, type=float, help='learning rate decay rate')
+parser.add_argument('--gamma', default=0.1, type=float, help='gamma update for optimizer')
+parser.add_argument('--num_workers', default=1, type=int, help='number of workers used in data loading')
+parser.add_argument('--cuda', default=True, type=bool, help='use cuda to train model')
+
+args = parser.parse_args()
 
 
-def grad(model, x, seg, box, label, number):
-    with tf.GradientTape() as tape:
-        predictions = model(x, True)
-        loss = model.loss(predictions, seg, box, label, number)
-    return tape.gradient(loss, model.variables), loss
+def train():
 
+    best_loss = np.inf
 
-def train(unparsed):
+    train_dataset = BDDLoader(args.json, args.im_dir, cfg['input_dim'])
 
-    best_loss = tf.convert_to_tensor(np.inf, tf.float32)
+    data_loader = data.DataLoader(train_dataset, args.batch_size, num_workers=args.num_workers,
+                                  collate_fn=detection_collate, shuffle=True)
 
-    train_dataset = create_loader(FLAGS.train_data, FLAGS.batch_size, FLAGS.capacity)
+    model = PerceptionNet(cfg['num_class'], [1, 1, 1, 1])
 
-    model = PerceptionNet([1, 1, 1, 1])
+    if args.resume:
+        print('Resuming training, loading {}...'.format(args.resume))
+        model.load_weights(args.resume)
+    else:
+        model.apply(weights_init)
 
-    step_counter = tf.Variable(0, trainable=False)
-    lr = tf.train.exponential_decay(FLAGS.lr, step_counter, FLAGS.decay_step, FLAGS.decay_rate)
-    optimizer = tf.train.AdamOptimizer(learning_rate=lr)  
+    if args.cuda:
+        model = model.cuda()
 
-    checkpoint = tf.train.Checkpoint(model=model, optimizer=optimizer, step_counter=step_counter)
-    checkpoint_path = os.path.join(FLAGS.save_dir, 'ckpt')
+    optimizer = torch.optim.Adam(model.parameters(), lr=args.lr, weight_decay=args.weight_decay)
     #######################################################################################
 
-    if FLAGS.resume_dir:
-        checkpoint.restore(tf.train.latest_checkpoint(FLAGS.resume_dir))
+    for epoch in np.arange(args.epoch):
 
-    for epoch in np.arange(FLAGS.epoch):
+        if epoch in cfg['lr_steps']:
+            step_index = cfg['lr_steps'].index(epoch) + 1
+            adjust_learning_rate(optimizer, args.gamma, step_index)
 
-        average_loss = 0.0
-        for idx, (images, seg, box, label, number) in enumerate(train_dataset):
+        average_loc = 0.0
+        average_cls = 0.0
+        for iteration, (images, targets, segs) in enumerate(data_loader):
 
-            grads, loss = grad(model, images, seg, box, label, number)
-            optimizer.apply_gradients(zip(grads, model.variables), global_step=step_counter)
+            if args.cuda:
+                images = Variable(images.cuda())
+                targets = [Variable(ann.cuda()) for ann in targets]
+            else:
+                images = Variable(images)
+                targets = [Variable(ann) for ann in targets]
 
-            average_loss += loss
-            print('Batch size:{}, iter:{}, loss:{:.4f}'.format(FLAGS.batch_size, step_counter.numpy(), loss))
+            out, fetures = model(images)
 
-        average_loss /= (idx+1)
+            optimizer.zero_grad()
+            cls_loss, loc_loss = detection_loss(out, targets, cfg)
+            loss = cls_loss + loc_loss
+            loss.backward()
+            optimizer.step()
 
-        print('==== Epoch:{}, Avg loss:{:.4f} ====\n'.format(epoch, average_loss))
+            average_cls = ((average_cls * iteration) + cls_loss.item()) / (iteration + 1)
+            average_loc = ((average_loc * iteration) + loc_loss.item()) / (iteration + 1)
+            count = round(iteration / len(data_loader) * 50)
+            sys.stdout.write('[Epoch {}], {}/{}: [{}{}] Avg_loc loss: {:.4}, Avg_conf loss:{:.4}\r'.format(
+                epoch, iteration + 1, len(data_loader), '#' * count, ' ' * (50 - count), average_loc, average_cls))
 
-        if (best_loss > average_loss):
+        sys.stdout.write('\n')
+        average_loss = average_cls + average_loc
+
+        if best_loss > average_loss:
             best_loss = average_loss
-            checkpoint.save(checkpoint_path)
-            print('Iter: {} model is saved'.format(step_counter.numpy()))
+            torch.save(model.state_dict(), os.path.join(args.save_dir, 'Perception_{}.pth'.format(epoch)))
+            print('Epoch: {} model is saved'.format(epoch))
+
+
+def weights_init(m):
+    r"""
+    weight init function
+    """
+    if isinstance(m, torch.nn.Conv2d):
+        init.xavier_normal_(m.weight.data)
+
+
+def adjust_learning_rate(optimizer, gamma, step):
+    r"""
+    Sets the learning rate to the initial LR decayed by 10 at every
+        specified step
+    Adapted from PyTorch Imagenet example:
+    https://github.com/pytorch/examples/blob/master/imagenet/main.py
+    :param optimizer:optimizer
+    :param gamma:learning rate decay
+    :param step:specified step
+    :return:
+    """
+    lr = args.lr * (gamma ** step)
+    for param_group in optimizer.param_groups:
+        param_group['lr'] = lr
 
 
 if __name__ == '__main__':
 
-    FLAGS, unparsed = parser.parse_known_args()
+    if not os.path.exists(args.save_dir):
+        os.makedirs(args.save_dir)
 
-    if not os.path.exists(FLAGS.log):
-        os.makedirs(FLAGS.log)
-
-    tf.app.run(main=train, argv=[sys.argv[0]] + unparsed)
+    train()

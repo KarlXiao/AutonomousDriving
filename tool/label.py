@@ -1,4 +1,5 @@
-road_obj = ['bus', 'car', 'person', 'truck']
+road_obj = ['car']
+# road_obj = ['car', 'bus', 'person', 'truck']
 # road_obj = ['bike', 'bus', 'car', 'motor', 'person', 'rider', 'traffic light', 'traffic sign', 'train', 'truck']
 
 drivable_area = ['alternative', 'direct']

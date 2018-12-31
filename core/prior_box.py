@@ -1,6 +1,6 @@
 from math import sqrt as sqrt
 from itertools import product as product
-import tensorflow as tf
+import torch
 
 
 class PriorBox(object):
@@ -38,7 +38,7 @@ class PriorBox(object):
                         for sr in self.scale_ratios:
                             mean += [cx, cy, s_x*sqrt(ar)*sr, s_y/sqrt(ar)*sr]
 
-        output = tf.reshape(tf.convert_to_tensor(mean), [-1, 4])
+        output = torch.Tensor(mean).view(-1, 4)
         if self.clip:
-            tf.clip_by_value(output, 1e-8, 1)
+            torch.clamp(output, min=0, max=1)
         return output
