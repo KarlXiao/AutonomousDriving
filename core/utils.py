@@ -60,11 +60,11 @@ def encode(matched, priors, variances):
     :return: encoded boxes (tensor), Shape: [num_priors, 4]
     """
     # dist b/t match center and prior's center
-    g_cxcy = matched[:, :2] + matched[:, 2:]/2 - priors[:, :2]
+    g_cxcy = (matched[:, :2] + matched[:, 2:])/2 - priors[:, :2]
     # encode variance
     g_cxcy /= (variances[0] * priors[:, 2:])
     # match wh / prior wh
-    g_wh = matched[:, 2:] / priors[:, 2:]
+    g_wh = (matched[:, 2:] - matched[:, :2]) / priors[:, 2:]
     g_wh = torch.log(g_wh) / variances[1]
 
     return torch.cat([g_cxcy, g_wh], 1)  # [num_priors,4]
@@ -103,7 +103,7 @@ def match(threshold, truths, priors, variances, labels, loc_t, conf_t, idx):
     :return: The matched indices corresponding to 1)location and 2)confidence preds
     """
     overlaps = jaccard(
-        point_form(truths, 'xywh'),
+        truths,
         point_form(priors, 'ccwh')
     )
 

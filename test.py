@@ -28,7 +28,7 @@ def val():
     data_loader = data.DataLoader(train_dataset, args.batch_size, num_workers=args.num_workers,
                                   collate_fn=detection_collate, shuffle=True)
 
-    model = PerceptionNet(cfg['num_class'], [1, 1, 1, 1])
+    model = PerceptionNet(cfg['num_class'], [3, 4, 6, 3])
 
     print('Loading {}...'.format(args.resume))
     model.load_weights(args.resume)
@@ -67,7 +67,6 @@ def val():
 
         for target in targets[0]:
             box = target[:4]
-            box[2:] += box[:2]
             box *= scale
             label = int(target[4])
             cv2.rectangle(img, (int(box[0]), int(box[1])), (int(box[2]), int(box[3])), (0, 255, 0), 1)

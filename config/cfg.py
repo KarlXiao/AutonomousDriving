@@ -1,13 +1,13 @@
 DetectionCfg = {
-    'feature_maps': [[80, 45], [40, 23], [20, 12], [10, 6], [5, 3]],
+    'feature_maps': [[20, 12], [10, 6], [5, 3]],
 
     'input_dim': [640, 360],
 
-    'anchors': [[32], [64], [128], [256], [512]],
+    'anchors': [[50, 100], [150, 200], [250, 300]],
 
-    'aspect_ratios': [1/2., 1/1., 2/1.],
+    'aspect_ratios': [1/1., 2/1.],
 
-    'scale_ratios': [1., pow(2, 1/3.), pow(2, 2/3.)],
+    'scale_ratios': [1., pow(2, 1/3.)],
 
     'variance': [0.1, 0.2],
 
@@ -15,11 +15,11 @@ DetectionCfg = {
 
     'iou_thr': 0.5,
 
-    'conf_thr': 0.6,
+    'conf_thr': 0.5,
 
     'neg_pos': 3,
 
     'clip': True,
 
-    'lr_steps': [5, 15, 30, 60, 120, 240]
+    'lr_steps': [20, 50, 100, 200]
 }

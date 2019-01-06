@@ -12,14 +12,13 @@ from config import DetectionCfg as cfg
 
 parser = argparse.ArgumentParser()
 parser.add_argument('--save_dir', type=str, default='checkpoint', help='directory to save checkpoint')
-parser.add_argument('--log', type=str, default='log/', help='directory to save training log')
 parser.add_argument('--resume', type=str, default=None, help='model directory for finetune training')
 parser.add_argument('--json', type=str, default='data/BDD100K/labels/bdd100k_labels_images_train.json', help='tfrecords to load')
 parser.add_argument('--im_dir', type=str, default='data/BDD100K/images', help='images directory')
 
 parser.add_argument('--batch_size', type=int, default=32, help='training batch size')
-parser.add_argument('--epoch', type=int, default=1600, help='number of training epoch')
-parser.add_argument('--lr', type=float, default=1e-2, help='learning rate')
+parser.add_argument('--epoch', type=int, default=300, help='number of training epoch')
+parser.add_argument('--lr', type=float, default=1e-3, help='learning rate')
 parser.add_argument('--weight_decay', default=5e-4, type=float, help='learning rate decay step')
 parser.add_argument('--momentum', default=0.9, type=float, help='learning rate decay rate')
 parser.add_argument('--gamma', default=0.1, type=float, help='gamma update for optimizer')
@@ -38,7 +37,7 @@ def train():
     data_loader = data.DataLoader(train_dataset, args.batch_size, num_workers=args.num_workers,
                                   collate_fn=detection_collate, shuffle=True)
 
-    model = PerceptionNet(cfg['num_class'], [1, 1, 1, 1])
+    model = PerceptionNet(cfg['num_class'], [3, 4, 6, 3])
 
     if args.resume:
         print('Resuming training, loading {}...'.format(args.resume))

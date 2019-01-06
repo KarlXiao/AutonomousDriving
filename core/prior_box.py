@@ -11,7 +11,7 @@ class PriorBox(object):
     def __init__(self, cfg):
         super(PriorBox, self).__init__()
         self.image_size = cfg['input_dim']
-        self.number = len(cfg['aspect_ratios'])*len(cfg['scale_ratios'])
+        self.number = len(cfg['aspect_ratios'])*len(cfg['scale_ratios'])*2
         self.variance = cfg['variance'] or [0.1]
         self.feature_maps = cfg['feature_maps']
         self.anchors = cfg['anchors']
@@ -31,8 +31,8 @@ class PriorBox(object):
                 cy = (i + 0.5) / f[1]
 
                 for size_item in self.anchors[k]:
-                    s_x = size_item/self.image_size[1]
-                    s_y = size_item/self.image_size[0]
+                    s_x = size_item/self.image_size[0]
+                    s_y = size_item/self.image_size[1]
 
                     for ar in self.aspect_ratios:
                         for sr in self.scale_ratios:
