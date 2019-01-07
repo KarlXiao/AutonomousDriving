@@ -1,6 +1,6 @@
 from .PerceptionNet import PerceptionNet
 from .data_loader import BDDLoader
-from .loss import detection_loss
+from .loss import *
 from .utils import *
 from .detection import Detect
 from .augmentations import Augmentation
@@ -24,4 +24,4 @@ def detection_collate(batch):
         imgs.append(sample[0])
         targets.append(torch.FloatTensor(sample[1]))
         segs.append(sample[2])
-    return torch.stack(imgs, 0), targets, segs
+    return torch.stack(imgs, 0), targets, torch.stack(segs, 0)

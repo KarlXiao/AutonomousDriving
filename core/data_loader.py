@@ -72,22 +72,10 @@ class BDDLoader(data.Dataset):
             image_raw = cv2.resize(image_raw, (self.im_dim[0], self.im_dim[1]))
 
         return torch.from_numpy(image_raw / 255.0).permute(2, 0, 1).float(), target,\
-               torch.from_numpy(seg_raw)
+               torch.from_numpy(seg_raw).long()
 
     def __len__(self):
         r"""
         :return:total number of examples in dataset
         """
         return self.num_examples
-
-
-def drivable2color(seg):
-    r"""
-    :param seg: segmentation map
-    :return: color map
-    """
-    colors = [[0, 0, 0], [217, 83, 79], [91, 192, 222]]
-    color = np.zeros((seg.shape[0], seg.shape[1], 3), dtype=np.uint8)
-    for i in range(3):
-        color[seg == i] = colors[i]
-    return color

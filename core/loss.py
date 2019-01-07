@@ -2,7 +2,7 @@ import torch
 from torch.autograd import Variable
 import torch.nn.functional as F
 from .utils import match, one_hot_embedding
-import numpy as np
+
 
 def focal_loss(prediction, label_, num_classes, alpha=0.25, gamma=2):
     r"""
@@ -72,8 +72,20 @@ def detection_loss(predictions, targets, cfg):
 
     cls_loss = focal_loss(cls_logits, conf_t,  cfg['num_class'])
 
-    # N = num_pos.data.sum().float()
     loc_loss /= num
     cls_loss /= num
 
     return cls_loss, loc_loss
+
+
+def segmentation_loss(x, segs):
+    n, c, h, w = x.size()
+    log_p = x.transpose(1, 2).transpose(2, 3)
+    log_p = log_p[segs.view(n, h, w, 1).repeat(1, 1, 1, c) >= 0]
+    log_p = log_p.view(-1, c)
+
+    mask = segs >= 0
+    target_mask = segs[mask]
+    loss = F.cross_entropy(log_p, target_mask, reduction='sum')
+
+    return loss / n

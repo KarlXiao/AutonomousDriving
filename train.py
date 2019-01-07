@@ -1,12 +1,9 @@
 import os
 import sys
-import torch
 import torch.nn.init as init
-from torch.autograd import Variable
 import torch.utils.data as data
-import numpy as np
 import argparse
-from core import PerceptionNet, BDDLoader, detection_loss, detection_collate
+from core import *
 from config import DetectionCfg as cfg
 
 
@@ -23,7 +20,6 @@ parser.add_argument('--weight_decay', default=5e-4, type=float, help='learning r
 parser.add_argument('--momentum', default=0.9, type=float, help='learning rate decay rate')
 parser.add_argument('--gamma', default=0.1, type=float, help='gamma update for optimizer')
 parser.add_argument('--num_workers', default=1, type=int, help='number of workers used in data loading')
-parser.add_argument('--cuda', default=True, type=bool, help='use cuda to train model')
 
 args = parser.parse_args()
 
@@ -37,7 +33,7 @@ def train():
     data_loader = data.DataLoader(train_dataset, args.batch_size, num_workers=args.num_workers,
                                   collate_fn=detection_collate, shuffle=True)
 
-    model = PerceptionNet(cfg['num_class'], [3, 4, 6, 3])
+    model = PerceptionNet(cfg['num_class'], [2, 3, 5, 2])
 
     if args.resume:
         print('Resuming training, loading {}...'.format(args.resume))
@@ -45,8 +41,7 @@ def train():
     else:
         model.apply(weights_init)
 
-    if args.cuda:
-        model = model.cuda()
+    model = model.cuda()
 
     optimizer = torch.optim.Adam(model.parameters(), lr=args.lr, weight_decay=args.weight_decay)
     #######################################################################################
@@ -59,31 +54,33 @@ def train():
 
         average_loc = 0.0
         average_cls = 0.0
+        average_seg = 0.0
         for iteration, (images, targets, segs) in enumerate(data_loader):
 
-            if args.cuda:
-                images = Variable(images.cuda())
-                targets = [Variable(ann.cuda()) for ann in targets]
-            else:
-                images = Variable(images)
-                targets = [Variable(ann) for ann in targets]
+            images = Variable(images.cuda())
+            targets = [Variable(ann.cuda()) for ann in targets]
+            segs = Variable(segs.cuda())
 
-            out, fetures = model(images)
+            out, x = model(images)
 
             optimizer.zero_grad()
             cls_loss, loc_loss = detection_loss(out, targets, cfg)
-            loss = cls_loss + loc_loss
+            seg_loss = segmentation_loss(x, segs)
+            loss = cls_loss + loc_loss + seg_loss
             loss.backward()
             optimizer.step()
 
             average_cls = ((average_cls * iteration) + cls_loss.item()) / (iteration + 1)
             average_loc = ((average_loc * iteration) + loc_loss.item()) / (iteration + 1)
+            average_seg = ((average_seg * iteration) + seg_loss.item()) / (iteration + 1)
             count = round(iteration / len(data_loader) * 50)
-            sys.stdout.write('[Epoch {}], {}/{}: [{}{}] Avg_loc loss: {:.4}, Avg_conf loss:{:.4}\r'.format(
-                epoch, iteration + 1, len(data_loader), '#' * count, ' ' * (50 - count), average_loc, average_cls))
+            sys.stdout.write('[Epoch {}], {}/{}: [{}{}] Avg_loc loss: {:.4}, Avg_conf loss:{:.4}, '
+                             'Avg_seg loss:{:.4}\r'.format(epoch, iteration + 1, len(data_loader),
+                                                           '#' * count, ' ' * (50 - count), average_loc,
+                                                           average_cls, average_seg))
 
         sys.stdout.write('\n')
-        average_loss = average_cls + average_loc
+        average_loss = average_cls + average_loc + average_seg
 
         if best_loss > average_loss:
             best_loss = average_loss
