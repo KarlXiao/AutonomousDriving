@@ -1,4 +1,5 @@
 import torch
+import numpy as np
 
 
 def point_form(boxes, point_type='xywh'):
@@ -205,3 +206,15 @@ def one_hot_embedding(labels, num_classes):
     y = torch.eye(num_classes)  # [D,D]
 
     return y[labels]            # [N,D]
+
+
+def drivable2color(seg):
+    r"""
+    :param seg: segmentation map
+    :return: color map
+    """
+    colors = [[0, 0, 0], [217, 83, 79], [91, 192, 222]]
+    color = np.zeros((seg.shape[0], seg.shape[1], 3), dtype=np.uint8)
+    for i in range(3):
+        color[seg == i] = colors[i]
+    return color

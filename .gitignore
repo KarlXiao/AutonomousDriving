@@ -108,6 +108,7 @@ venv.bak/
 
 data/
 checkpoint/
+runs/
 
 *.tfrecords
 *.jpg

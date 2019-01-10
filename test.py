@@ -5,12 +5,12 @@ import torch.utils.data as data
 import numpy as np
 import argparse
 import cv2
-from core import PerceptionNet, BDDLoader, detection_collate, Detect
+from core import PerceptionNet, BDDLoader, detection_collate, Detect, drivable2color
 from config import DetectionCfg as cfg
 
 
 parser = argparse.ArgumentParser()
-parser.add_argument('--resume', type=str, default='checkpoint/Perception_1.pth', help='model directory for finetune training')
+parser.add_argument('--resume', type=str, default='checkpoint/Perception_44.pth', help='model directory for finetune training')
 parser.add_argument('--json', type=str, default='data/BDD100K/labels/bdd100k_labels_images_val.json', help='tfrecords to load')
 parser.add_argument('--im_dir', type=str, default='data/BDD100K/images', help='images directory')
 
@@ -28,7 +28,7 @@ def val():
     data_loader = data.DataLoader(train_dataset, args.batch_size, num_workers=args.num_workers,
                                   collate_fn=detection_collate, shuffle=True)
 
-    model = PerceptionNet(cfg['num_class'], [3, 4, 6, 3])
+    model = PerceptionNet(cfg['num_class'], [2, 3, 5, 2])
 
     print('Loading {}...'.format(args.resume))
     model.load_weights(args.resume)
@@ -48,10 +48,14 @@ def val():
             images = Variable(images)
 
         out, features = model(images)
-        detections = detect(out[0].data, out[1].data, out[2].data)
+        detections = detect(out[0].data, out[1].data, model.prior)
+        seg = features.data.max(1)[1].cpu().numpy()[0]
+        seg_cor = drivable2color(seg)
 
         img = np.transpose(images[0].data.cpu().numpy(), (1, 2, 0))*255
         img = img.copy()
+        img[seg_cor > 0] = 0
+        img += seg_cor
         # scale each detection back up to the image
         scale = torch.Tensor([img.shape[1], img.shape[0],
                               img.shape[1], img.shape[0]])

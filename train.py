@@ -5,6 +5,7 @@ import torch.utils.data as data
 import argparse
 from core import *
 from config import DetectionCfg as cfg
+from tensorboardX import SummaryWriter
 
 
 parser = argparse.ArgumentParser()
@@ -13,7 +14,7 @@ parser.add_argument('--resume', type=str, default=None, help='model directory fo
 parser.add_argument('--json', type=str, default='data/BDD100K/labels/bdd100k_labels_images_train.json', help='tfrecords to load')
 parser.add_argument('--im_dir', type=str, default='data/BDD100K/images', help='images directory')
 
-parser.add_argument('--batch_size', type=int, default=32, help='training batch size')
+parser.add_argument('--batch_size', type=int, default=12, help='training batch size')
 parser.add_argument('--epoch', type=int, default=300, help='number of training epoch')
 parser.add_argument('--lr', type=float, default=1e-3, help='learning rate')
 parser.add_argument('--weight_decay', default=5e-4, type=float, help='learning rate decay step')
@@ -27,6 +28,8 @@ args = parser.parse_args()
 def train():
 
     best_loss = np.inf
+    writer = SummaryWriter()
+    dummy_input = torch.rand(1, 3, cfg['input_dim'][1], cfg['input_dim'][0])
 
     train_dataset = BDDLoader(args.json, args.im_dir, cfg['input_dim'])
 
@@ -34,6 +37,7 @@ def train():
                                   collate_fn=detection_collate, shuffle=True)
 
     model = PerceptionNet(cfg['num_class'], [2, 3, 5, 2])
+    writer.add_graph(model, (dummy_input, ))
 
     if args.resume:
         print('Resuming training, loading {}...'.format(args.resume))
@@ -52,6 +56,8 @@ def train():
             step_index = cfg['lr_steps'].index(epoch) + 1
             adjust_learning_rate(optimizer, args.gamma, step_index)
 
+        writer.add_scalar('Train/learning rate', optimizer.param_groups[0]['lr'], epoch)
+
         average_loc = 0.0
         average_cls = 0.0
         average_seg = 0.0
@@ -64,8 +70,8 @@ def train():
             out, x = model(images)
 
             optimizer.zero_grad()
-            cls_loss, loc_loss = detection_loss(out, targets, cfg)
-            seg_loss = segmentation_loss(x, segs)
+            cls_loss, loc_loss = detection_loss(out, targets, cfg, model.prior)
+            seg_loss = segmentation_loss(x, segs, 3)
             loss = cls_loss + loc_loss + seg_loss
             loss.backward()
             optimizer.step()
@@ -73,6 +79,11 @@ def train():
             average_cls = ((average_cls * iteration) + cls_loss.item()) / (iteration + 1)
             average_loc = ((average_loc * iteration) + loc_loss.item()) / (iteration + 1)
             average_seg = ((average_seg * iteration) + seg_loss.item()) / (iteration + 1)
+
+            writer.add_scalar('Train/cls loss', average_cls, iteration)
+            writer.add_scalar('Train/loc loss', average_loc, iteration)
+            writer.add_scalar('Train/seg loss', average_seg, iteration)
+
             count = round(iteration / len(data_loader) * 50)
             sys.stdout.write('[Epoch {}], {}/{}: [{}{}] Avg_loc loss: {:.4}, Avg_conf loss:{:.4}, '
                              'Avg_seg loss:{:.4}\r'.format(epoch, iteration + 1, len(data_loader),
@@ -81,6 +92,11 @@ def train():
 
         sys.stdout.write('\n')
         average_loss = average_cls + average_loc + average_seg
+
+        writer.add_scalar('Train/Global avg loss', average_loss, epoch)
+
+        for key, param in model.state_dict():
+            writer.add_histogram(key, param, epoch)
 
         if best_loss > average_loss:
             best_loss = average_loss

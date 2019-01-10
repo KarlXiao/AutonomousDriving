@@ -36,7 +36,7 @@ def focal_loss(prediction, label_, num_classes, alpha=0.25, gamma=2):
     return F.binary_cross_entropy_with_logits(prediction, t, w, reduction='sum', pos_weight=pos_weight)
 
 
-def detection_loss(predictions, targets, cfg):
+def detection_loss(predictions, targets, cfg, priors):
     r"""
     loss function of detection
     :param predictions: prediction of net, including classification and localization
@@ -47,7 +47,7 @@ def detection_loss(predictions, targets, cfg):
             neg_pos: negative / positive samples ratios, default: 3
     :return: loss including classification loss and localization loss
     """
-    loc_logits, cls_logits, priors = predictions
+    loc_logits, cls_logits = predictions
     num = loc_logits.size(0)
     num_priors = priors.size(0)
     loc_t = torch.Tensor(num, num_priors, 4)
@@ -78,7 +78,7 @@ def detection_loss(predictions, targets, cfg):
     return cls_loss, loc_loss
 
 
-def segmentation_loss(x, segs):
+def segmentation_loss(x, segs, num_cls):
     n, c, h, w = x.size()
     log_p = x.transpose(1, 2).transpose(2, 3)
     log_p = log_p[segs.view(n, h, w, 1).repeat(1, 1, 1, c) >= 0]
@@ -86,6 +86,12 @@ def segmentation_loss(x, segs):
 
     mask = segs >= 0
     target_mask = segs[mask]
-    loss = F.cross_entropy(log_p, target_mask, reduction='sum')
+    weight = torch.bincount(target_mask).float()
+    weight = - torch.log(1e-8 + weight / torch.sum(weight))
+    # in case some labels are not included in current batch
+    if len(weight) < num_cls:
+        weight = torch.ones(num_cls).cuda()
 
-    return loss / n
+    loss = F.cross_entropy(log_p, target_mask, weight=weight)
+
+    return loss
