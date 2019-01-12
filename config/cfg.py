@@ -21,5 +21,5 @@ DetectionCfg = {
 
     'clip': True,
 
-    'lr_steps': [20, 50, 100, 200]
+    'lr_steps': [20, 40, 60, 80, 100, 200]
 }

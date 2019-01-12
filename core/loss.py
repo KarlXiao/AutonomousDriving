@@ -92,6 +92,6 @@ def segmentation_loss(x, segs, num_cls):
     if len(weight) < num_cls:
         weight = torch.ones(num_cls).cuda()
 
-    loss = F.cross_entropy(log_p, target_mask, weight=weight)
+    loss = F.cross_entropy(log_p, target_mask, weight=weight, reduction='sum')
 
     return loss

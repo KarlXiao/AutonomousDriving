@@ -16,11 +16,12 @@ parser.add_argument('--im_dir', type=str, default='data/BDD100K/images', help='i
 
 parser.add_argument('--batch_size', type=int, default=12, help='training batch size')
 parser.add_argument('--epoch', type=int, default=300, help='number of training epoch')
-parser.add_argument('--lr', type=float, default=1e-3, help='learning rate')
+parser.add_argument('--lr', type=float, default=1e-4, help='learning rate')
 parser.add_argument('--weight_decay', default=5e-4, type=float, help='learning rate decay step')
 parser.add_argument('--momentum', default=0.9, type=float, help='learning rate decay rate')
-parser.add_argument('--gamma', default=0.1, type=float, help='gamma update for optimizer')
+parser.add_argument('--gamma', default=0.5, type=float, help='gamma update for optimizer')
 parser.add_argument('--num_workers', default=1, type=int, help='number of workers used in data loading')
+parser.add_argument('--log', default='default', type=str, help='training log')
 
 args = parser.parse_args()
 
@@ -28,7 +29,7 @@ args = parser.parse_args()
 def train():
 
     best_loss = np.inf
-    writer = SummaryWriter()
+    writer = SummaryWriter(os.path.join('runs', args.log))
     dummy_input = torch.rand(1, 3, cfg['input_dim'][1], cfg['input_dim'][0])
 
     train_dataset = BDDLoader(args.json, args.im_dir, cfg['input_dim'])
@@ -80,9 +81,9 @@ def train():
             average_loc = ((average_loc * iteration) + loc_loss.item()) / (iteration + 1)
             average_seg = ((average_seg * iteration) + seg_loss.item()) / (iteration + 1)
 
-            writer.add_scalar('Train/cls loss', average_cls, iteration)
-            writer.add_scalar('Train/loc loss', average_loc, iteration)
-            writer.add_scalar('Train/seg loss', average_seg, iteration)
+            writer.add_scalar('Train/cls loss', average_cls, (epoch - 1) * len(data_loader) + iteration)
+            writer.add_scalar('Train/loc loss', average_loc, (epoch - 1) * len(data_loader) + iteration)
+            writer.add_scalar('Train/seg loss', average_seg, (epoch - 1) * len(data_loader) + iteration)
 
             count = round(iteration / len(data_loader) * 50)
             sys.stdout.write('[Epoch {}], {}/{}: [{}{}] Avg_loc loss: {:.4}, Avg_conf loss:{:.4}, '
@@ -95,8 +96,8 @@ def train():
 
         writer.add_scalar('Train/Global avg loss', average_loss, epoch)
 
-        for key, param in model.state_dict():
-            writer.add_histogram(key, param, epoch)
+        for key, param in model.named_parameters():
+            writer.add_histogram(key, param.clone(), epoch)
 
         if best_loss > average_loss:
             best_loss = average_loss
@@ -130,7 +131,7 @@ def adjust_learning_rate(optimizer, gamma, step):
 
 if __name__ == '__main__':
 
-    if not os.path.exists(args.save_dir):
-        os.makedirs(args.save_dir)
+    if not os.path.exists(os.path.join(args.save_dir, args.log)):
+        os.makedirs(os.path.join(args.save_dir, args.log))
 
     train()

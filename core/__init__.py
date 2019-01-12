@@ -3,7 +3,6 @@ from .data_loader import BDDLoader
 from .loss import *
 from .utils import *
 from .detection import Detect
-from .augmentations import Augmentation
 
 
 def detection_collate(batch):
