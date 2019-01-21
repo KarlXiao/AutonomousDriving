@@ -1,4 +1,5 @@
 import torch
+import torch.nn as nn
 from torch.autograd import Variable
 import torch.nn.functional as F
 from .utils import match, one_hot_embedding
@@ -72,8 +73,9 @@ def detection_loss(predictions, targets, cfg, priors):
 
     cls_loss = focal_loss(cls_logits, conf_t,  cfg['num_class'])
 
-    loc_loss /= num
-    cls_loss /= num
+    num_pos = pos.sum().float()
+    loc_loss /= (num_pos + 1)
+    cls_loss /= (num_pos + 1)
 
     return cls_loss, loc_loss
 
@@ -92,6 +94,26 @@ def segmentation_loss(x, segs, num_cls):
     if len(weight) < num_cls:
         weight = torch.ones(num_cls).cuda()
 
-    loss = F.cross_entropy(log_p, target_mask, weight=weight, reduction='sum')
+    loss = F.cross_entropy(log_p, target_mask, weight=weight)
 
     return loss
+
+
+class GANLoss(nn.Module):
+    def __init__(self, target_real_label=1.0, target_fake_label=0.0):
+        super(GANLoss, self).__init__()
+        self.register_buffer('real_label', torch.tensor(target_real_label))
+        self.register_buffer('fake_label', torch.tensor(target_fake_label))
+        self.loss = nn.MSELoss()
+        # self.loss = nn.BCELoss()
+
+    def get_target_tensor(self, input, target_is_real):
+        if target_is_real:
+            target_tensor = self.real_label
+        else:
+            target_tensor = self.fake_label
+        return target_tensor.expand_as(input)
+
+    def __call__(self, input, target_is_real):
+        target_tensor = self.get_target_tensor(input, target_is_real)
+        return self.loss(input, target_tensor)

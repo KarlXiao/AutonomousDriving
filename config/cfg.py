@@ -13,13 +13,11 @@ DetectionCfg = {
 
     'num_class': 1,
 
-    'iou_thr': 0.5,
+    'iou_thr': 0.4,
 
     'conf_thr': 0.5,
 
     'neg_pos': 3,
 
     'clip': True,
-
-    'lr_steps': [20, 40, 60, 80, 100, 200]
 }
