@@ -46,12 +46,9 @@ def train():
     model = model.cuda()
     torch.backends.cudnn.benchmark = True
 
-    optimizer = torch.optim.Adam(model.parameters(), lr=args.lr, weight_decay=args.weight_decay)
     #######################################################################################
 
     for epoch in np.arange(args.start_epoch, args.epoch):
-
-        writer.add_scalar('Train/learning rate', optimizer.param_groups[0]['lr'], epoch)
 
         average_loc, average_cls, average_seg, average_dis = [0.0]*4
 
