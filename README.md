@@ -48,11 +48,6 @@ Use GAN loss as segmentation loss
 ![8.jpg](./images/8.jpg)
 ![9.jpg](./images/9.jpg)
 
-## TODO
-
-- [x] Train and test
-- [ ] Model pruning
-
 ## License
 
 Permission to use, copy, modify, and distribute this software and its documentation for educational, research, and not-for-profit purposes.

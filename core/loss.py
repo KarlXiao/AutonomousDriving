@@ -33,8 +33,9 @@ def focal_loss(prediction, label_, num_classes, alpha=0.25, gamma=2):
     num_neg = num_neg.unsqueeze(1).unsqueeze(1).expand_as(w)
     w = w * (1 - pt).pow(gamma) / num_pos.expand_as(w)
     pos_weight = - torch.log(1e-8 + torch.sum(t, dim=1).unsqueeze(1).expand_as(w) / num_neg)
+    pos_weight[t == 0] = 1
 
-    return F.binary_cross_entropy_with_logits(prediction, t, w, reduction='sum', pos_weight=pos_weight)
+    return - torch.sum(w * pos_weight * (t * torch.log(p) + (1 - t) * torch.log(1 - p)))
 
 
 def detection_loss(predictions, targets, cfg, priors):
